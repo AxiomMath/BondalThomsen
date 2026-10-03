@@ -1,0 +1,21 @@
+name = "BondalThomsen"
+defaultTargets = ["BondalThomsen"]
+
+[leanOptions]
+pp.unicode.fun = true
+autoImplicit = false
+relaxedAutoImplicit = false
+
+[[require]]
+name = "mathlib"
+git = "https://github.com/leanprover-community/mathlib4.git"
+rev = "b9be95a02e0ca7f70ae4099c426ccdfdfb898dd2"
+
+[[lean_lib]]
+name = "BondalThomsen"
+
+[[lean_lib]]
+name = "Challenge"
+
+[[lean_lib]]
+name = "Solution"

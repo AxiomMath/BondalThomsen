@@ -1,0 +1,484 @@
+module
+
+public import BondalThomsen.Ports.TauCeti.AlgebraicGeometry.Modules.GlobalSections
+public import BondalThomsen.Ports.TauCeti.AlgebraicGeometry.Scheme.Opens
+public import Mathlib.AlgebraicGeometry.FunctionField
+public import Mathlib.AlgebraicGeometry.Modules.Sheaf
+public import Mathlib.AlgebraicGeometry.Stalk
+public import Mathlib.Algebra.Category.ModuleCat.Sheaf.PullbackFree
+public import Mathlib.Topology.Sheaves.Flasque
+
+@[expose] public section
+
+open CategoryTheory Limits TopologicalSpace AlgebraicGeometry Opposite
+
+namespace TauCeti
+
+namespace AlgebraicGeometry
+
+universe u
+
+noncomputable section
+
+namespace Scheme
+
+variable (X : Scheme.{u}) [IrreducibleSpace X]
+
+def fromSpecFunctionField : Spec X.functionField ⟶ X :=
+  X.fromSpecStalk (genericPoint X)
+
+variable {X}
+
+theorem genericPoint_mem (U : X.Opens) [Nonempty U] : genericPoint X ∈ U :=
+  ((genericPoint_spec X).mem_open_set_iff U.isOpen).mpr (by simpa using ‹Nonempty U›)
+
+theorem germ_smul_functionField {U : X.Opens} [Nonempty U] {x : X} (hx : x ∈ U) (r : Γ(X, U))
+    (f : X.functionField) : X.presheaf.germ U x hx r • f = r • f := by
+  rw [Algebra.smul_def, Algebra.smul_def, Scheme.algebraMap_germ_eq_germToFunctionField,
+    RingHom.algebraMap_toAlgebra]
+
+instance instUniqueSpecFunctionField (X : Scheme.{u}) [IrreducibleSpace X] :
+    Unique (Spec X.functionField) where
+  default := IsLocalRing.closedPoint X.functionField
+  uniq p := by
+    refine (X.fromSpecStalk (genericPoint X)).isEmbedding.injective ?_
+    refine Eq.trans ?_ Scheme.fromSpecStalk_closedPoint.symm
+    have hmem : X.fromSpecStalk (genericPoint X) p ∈
+        Set.range (X.fromSpecStalk (genericPoint X)) := ⟨p, rfl⟩
+    rw [Scheme.range_fromSpecStalk] at hmem
+    have hclosure : closure ({genericPoint X} : Set X) ⊆
+        closure ({X.fromSpecStalk (genericPoint X) p} : Set X) :=
+      specializes_iff_closure_subset.mp hmem
+    rw [genericPoint_closure] at hclosure
+    exact ((genericPoint_spec X).eq (Set.univ_subset_iff.mp hclosure)).symm
+
+def rationalFunctionsRing (X : Scheme.{u}) [IrreducibleSpace X] :
+    TopCat.Sheaf CommRingCat X :=
+  (TopCat.Sheaf.pushforward CommRingCat (fromSpecFunctionField X).base).obj
+    (Spec X.functionField).sheaf
+
+def toRationalFunctionsRing (X : Scheme.{u}) [IrreducibleSpace X] :
+    X.sheaf ⟶ rationalFunctionsRing X where
+  hom := (fromSpecFunctionField X).c
+
+def rationalFunctions (X : Scheme.{u}) [IrreducibleSpace X] : X.Modules :=
+  (Scheme.Modules.pushforward (fromSpecFunctionField X)).obj (SheafOfModules.unit _)
+
+def rationalFunctionsSectionsEquiv (X : Scheme.{u}) [IrreducibleSpace X] (U : X.Opens) :
+    (Γ(rationalFunctions X, U) : Type u) ≃+
+      ((rationalFunctionsRing X).presheaf.obj (.op U) : Type u) :=
+  AddEquiv.refl _
+
+@[simp]
+theorem rationalFunctionsSectionsEquiv_map {U V : X.Opens} (i : U ⟶ V)
+    (s : Γ(rationalFunctions X, V)) :
+    rationalFunctionsSectionsEquiv X U ((rationalFunctions X).presheaf.map i.op s) =
+      (rationalFunctionsRing X).presheaf.map i.op (rationalFunctionsSectionsEquiv X V s) :=
+  by
+    unfold rationalFunctionsSectionsEquiv rationalFunctions rationalFunctionsRing
+    rfl
+
+theorem fromSpecFunctionField_app (U : X.Opens) [Nonempty U] :
+    (fromSpecFunctionField X).app U =
+      X.germToFunctionField U ≫ (Scheme.ΓSpecIso X.functionField).inv ≫
+        (Spec X.functionField).presheaf.map (homOfLE le_top).op :=
+  Scheme.fromSpecStalk_app (genericPoint_mem U)
+
+@[simp]
+theorem fromSpecFunctionField_preimage (U : X.Opens) [Nonempty U] :
+    (fromSpecFunctionField X) ⁻¹ᵁ U = ⊤ := by
+  apply top_unique
+  intro p _
+  apply TopologicalSpace.Opens.mem_map.mpr
+  rw [Subsingleton.elim p (IsLocalRing.closedPoint X.functionField),
+    fromSpecFunctionField, Scheme.fromSpecStalk_closedPoint]
+  exact genericPoint_mem U
+
+def functionFieldSectionsIso (U : X.Opens) [Nonempty U] :
+    Γ(Spec X.functionField, (fromSpecFunctionField X) ⁻¹ᵁ U) ≅ X.functionField :=
+  ((Spec X.functionField).presheaf.mapIso
+    (eqToIso (fromSpecFunctionField_preimage U)).op).symm ≪≫ Scheme.ΓSpecIso X.functionField
+
+def rationalFunctionsRingEquiv (U : X.Opens) [Nonempty U] :
+    ((rationalFunctionsRing X).presheaf.obj (.op U) : Type u) ≃+* X.functionField :=
+  (functionFieldSectionsIso U).commRingCatIsoToRingEquiv
+
+theorem app_comp_functionFieldSectionsIso (U : X.Opens) [Nonempty U] :
+    (fromSpecFunctionField X).app U ≫ (functionFieldSectionsIso U).hom =
+      X.germToFunctionField U := by
+  rw [fromSpecFunctionField_app, functionFieldSectionsIso]
+  simp only [Iso.trans_hom, Iso.symm_hom, Functor.mapIso_inv, Category.assoc]
+  rw [← Functor.map_comp_assoc,
+    Subsingleton.elim ((homOfLE le_top).op ≫
+      (eqToIso (fromSpecFunctionField_preimage U)).op.inv) (𝟙 _)]
+  simp
+
+theorem map_comp_functionFieldSectionsIso {U V : X.Opens} [Nonempty U] [Nonempty V]
+    (i : U ⟶ V) :
+    (Spec X.functionField).presheaf.map
+        ((Opens.map (fromSpecFunctionField X).base).map i).op ≫
+      (functionFieldSectionsIso U).hom = (functionFieldSectionsIso V).hom := by
+  rw [functionFieldSectionsIso, functionFieldSectionsIso]
+  simp only [Iso.trans_hom, Iso.symm_hom, Functor.mapIso_inv]
+  rw [← Functor.map_comp_assoc,
+    Subsingleton.elim (((Opens.map (fromSpecFunctionField X).base).map i).op ≫
+      (eqToIso (fromSpecFunctionField_preimage U)).op.inv)
+      (eqToIso (fromSpecFunctionField_preimage V)).op.inv]
+
+@[simp]
+theorem rationalFunctionsRingEquiv_map {U V : X.Opens} [Nonempty U] [Nonempty V] (i : U ⟶ V)
+    (s : (rationalFunctionsRing X).presheaf.obj (.op V)) :
+    rationalFunctionsRingEquiv U ((rationalFunctionsRing X).presheaf.map i.op s) =
+      rationalFunctionsRingEquiv V s := by
+  unfold rationalFunctionsRing at s ⊢
+  change (functionFieldSectionsIso U).hom
+    ((Spec X.functionField).presheaf.map
+      ((Opens.map (fromSpecFunctionField X).base).map i).op
+        (id s : Γ(Spec X.functionField, (fromSpecFunctionField X) ⁻¹ᵁ V))) =
+          (functionFieldSectionsIso V).hom s
+  rw [← CategoryTheory.ConcreteCategory.comp_apply, map_comp_functionFieldSectionsIso]
+  rfl
+
+def rationalFunctionsEquiv (U : X.Opens) [Nonempty U] :
+    Γ(rationalFunctions X, U) ≃ₗ[Γ(X, U)] X.functionField :=
+  { rationalFunctionsRingEquiv U with
+    map_smul' r s := by
+      change (functionFieldSectionsIso U).hom (r • s) =
+        r • (functionFieldSectionsIso U).hom s
+      have h : (functionFieldSectionsIso U).hom (r • s) =
+          (functionFieldSectionsIso U).hom ((fromSpecFunctionField X).app U r *
+            (id s : Γ(Spec X.functionField, (fromSpecFunctionField X) ⁻¹ᵁ U))) := rfl
+      rw [h, map_mul, ← CategoryTheory.ConcreteCategory.comp_apply,
+        app_comp_functionFieldSectionsIso, Algebra.smul_def]
+      rfl
+  }
+
+theorem rationalFunctionsEquiv_apply (U : X.Opens) [Nonempty U]
+    (s : Γ(rationalFunctions X, U)) :
+    rationalFunctionsEquiv U s =
+      rationalFunctionsRingEquiv U (rationalFunctionsSectionsEquiv X U s) :=
+  by
+    unfold rationalFunctionsEquiv rationalFunctionsSectionsEquiv
+    rfl
+
+@[simp]
+theorem rationalFunctionsEquiv_map {U V : X.Opens} [Nonempty U] [Nonempty V] (i : U ⟶ V)
+    (s : Γ(rationalFunctions X, V)) :
+    rationalFunctionsEquiv U ((rationalFunctions X).presheaf.map i.op s) =
+      rationalFunctionsEquiv V s := by
+  rw [rationalFunctionsEquiv_apply, rationalFunctionsSectionsEquiv_map,
+    rationalFunctionsRingEquiv_map, rationalFunctionsEquiv_apply]
+
+theorem rationalFunctions_map_bijective {U V : X.Opens} [Nonempty U] [Nonempty V] (i : U ⟶ V) :
+    Function.Bijective ((rationalFunctions X).presheaf.map i.op) := by
+  constructor
+  · intro a b hab
+    refine (rationalFunctionsEquiv V).injective ?_
+    rw [← rationalFunctionsEquiv_map i a, ← rationalFunctionsEquiv_map i b, hab]
+  · intro t
+    refine ⟨(rationalFunctionsEquiv V).symm (rationalFunctionsEquiv U t), ?_⟩
+    refine (rationalFunctionsEquiv U).injective ?_
+    rw [rationalFunctionsEquiv_map, LinearEquiv.apply_symm_apply]
+
+instance isIso_rationalFunctions_map {U V : X.Opens} [Nonempty U] [Nonempty V] (i : U ⟶ V) :
+    IsIso ((rationalFunctions X).presheaf.map i.op) :=
+  (ConcreteCategory.isIso_iff_bijective _).mpr (rationalFunctions_map_bijective i)
+
+theorem rationalFunctionsRing_map_bijective {U V : X.Opens} [Nonempty U] [Nonempty V]
+    (i : U ⟶ V) :
+    Function.Bijective ((rationalFunctionsRing X).presheaf.map i.op) := by
+  have h : ⇑((rationalFunctionsRing X).presheaf.map i.op) =
+      rationalFunctionsSectionsEquiv X U ∘ (rationalFunctions X).presheaf.map i.op ∘
+        (rationalFunctionsSectionsEquiv X V).symm := by
+    funext s
+    rw [Function.comp_apply, Function.comp_apply, rationalFunctionsSectionsEquiv_map,
+      AddEquiv.apply_symm_apply]
+  rw [h]
+  exact (rationalFunctionsSectionsEquiv X U).bijective.comp
+    ((rationalFunctions_map_bijective i).comp (rationalFunctionsSectionsEquiv X V).symm.bijective)
+
+instance isIso_rationalFunctionsRing_map {U V : X.Opens} [Nonempty U] [Nonempty V] (i : U ⟶ V) :
+    IsIso ((rationalFunctionsRing X).presheaf.map i.op) :=
+  (ConcreteCategory.isIso_iff_bijective _).mpr (rationalFunctionsRing_map_bijective i)
+
+theorem subsingleton_rationalFunctions (U : X.Opens) (hU : U = ⊥) :
+    Subsingleton Γ(rationalFunctions X, U) := by
+  subst hU
+  have h : (fromSpecFunctionField X) ⁻¹ᵁ (⊥ : X.Opens) = ⊥ := by simp
+  have : Subsingleton Γ(Spec X.functionField,
+      (fromSpecFunctionField X) ⁻¹ᵁ (⊥ : X.Opens)) := by rw [h]; infer_instance
+  exact this
+
+instance isFlasque_rationalFunctions : (rationalFunctions X).presheaf.IsFlasque where
+  epi {U V} i := by
+    rw [AddCommGrpCat.epi_iff_surjective]
+    by_cases hV : V.unop = ⊥
+    · have := subsingleton_rationalFunctions (X := X) V.unop hV
+      exact fun t ↦ ⟨0, Subsingleton.elim _ _⟩
+    · have hV := (Opens.ne_bot_iff_nonempty _).mp hV
+      have : Nonempty V.unop := hV.to_subtype
+      have : Nonempty U.unop := (hV.mono (leOfHom i.unop)).to_subtype
+      exact (rationalFunctions_map_bijective (X := X) i.unop).surjective
+
+def toRationalFunctions (X : Scheme.{u}) [IrreducibleSpace X] :
+    @Quiver.Hom X.Modules _ (SheafOfModules.unit X.ringCatSheaf) (rationalFunctions X) :=
+  SheafOfModules.unitToPushforwardObjUnit (fromSpecFunctionField X).toRingCatSheafHom
+
+@[simp]
+theorem toRationalFunctionsRing_app (U : X.Opens) (r : Γ(X, U)) :
+    rationalFunctionsSectionsEquiv X U (Scheme.Modules.Hom.app (toRationalFunctions X) U r) =
+      (toRationalFunctionsRing X).hom.app (.op U) r := by
+  exact SheafOfModules.unitToPushforwardObjUnit_val_app_apply
+    (fromSpecFunctionField X).toRingCatSheafHom (X := .op U) r
+
+@[simp]
+theorem rationalFunctionsEquiv_toRationalFunctions_app (U : X.Opens) [Nonempty U]
+    (r : Γ(X, U)) :
+    rationalFunctionsEquiv U (Scheme.Modules.Hom.app (toRationalFunctions X) U r) =
+      X.germToFunctionField U r := by
+  exact ConcreteCategory.congr_hom (app_comp_functionFieldSectionsIso U) r
+
+theorem _root_.AlgebraicGeometry.Scheme.Modules.Hom.rationalFunctionsEquiv_app_unit
+    (φ : @Quiver.Hom X.Modules _ (SheafOfModules.unit X.ringCatSheaf) (rationalFunctions X))
+    (U : X.Opens) [Nonempty U] (a : Γ(X, U)) :
+    rationalFunctionsEquiv U (Scheme.Modules.Hom.app φ U a) =
+      X.germToFunctionField U a *
+        rationalFunctionsEquiv ⊤ (Scheme.Modules.Hom.app φ ⊤ (1 : Γ(X, ⊤))) := by
+  have hnat := φ.mapPresheaf.naturality_apply (homOfLE (le_top : U ≤ ⊤)).op (1 : Γ(X, ⊤))
+  have hres : Scheme.Modules.Hom.app φ U (1 : Γ(X, U)) =
+      (rationalFunctions X).presheaf.map (homOfLE (le_top : U ≤ ⊤)).op
+        (Scheme.Modules.Hom.app φ ⊤ (1 : Γ(X, ⊤))) := by
+    change Scheme.Modules.Hom.app φ U (X.presheaf.map (homOfLE (le_top : U ≤ ⊤)).op 1) =
+      (rationalFunctions X).presheaf.map (homOfLE (le_top : U ≤ ⊤)).op
+        (Scheme.Modules.Hom.app φ ⊤ (1 : Γ(X, ⊤))) at hnat
+    simpa only [map_one] using hnat
+  calc
+    _ = rationalFunctionsEquiv U (a • Scheme.Modules.Hom.app φ U (1 : Γ(X, U))) := by
+      have h := Scheme.Modules.Hom.app_smul φ a (1 : Γ(X, U))
+      change Scheme.Modules.Hom.app φ U (a * (1 : Γ(X, U)) : Γ(X, U)) =
+        a • Scheme.Modules.Hom.app φ U (1 : Γ(X, U)) at h
+      rw [mul_one] at h
+      exact congrArg (rationalFunctionsEquiv U) h
+    _ = _ := by
+      rw [map_smul, hres, rationalFunctionsEquiv_map, Algebra.smul_def,
+        RingHom.algebraMap_toAlgebra]
+
+section SectionsMul
+
+theorem rationalFunctionsSectionsEquiv_smul (U : X.Opens) (r : Γ(X, U))
+    (s : Γ(rationalFunctions X, U)) :
+    rationalFunctionsSectionsEquiv X U (r • s) =
+      (toRationalFunctionsRing X).hom.app (.op U) r * rationalFunctionsSectionsEquiv X U s :=
+  (rfl)
+
+variable (X) in
+
+def rationalFunctionsMulBilin (U : X.Opens) :
+    Γ(rationalFunctions X, U) →ₗ[Γ(X, U)] Γ(rationalFunctions X, U) →ₗ[Γ(X, U)]
+      Γ(rationalFunctions X, U) :=
+  LinearMap.mk₂ Γ(X, U)
+    (fun s t ↦ (rationalFunctionsSectionsEquiv X U).symm
+      (rationalFunctionsSectionsEquiv X U s * rationalFunctionsSectionsEquiv X U t))
+    (fun s s' t ↦ (rationalFunctionsSectionsEquiv X U).injective (by simp [add_mul]))
+    (fun r s t ↦ (rationalFunctionsSectionsEquiv X U).injective (by
+      simp [rationalFunctionsSectionsEquiv_smul, mul_assoc]))
+    (fun s t t' ↦ (rationalFunctionsSectionsEquiv X U).injective (by simp [mul_add]))
+    (fun r s t ↦ (rationalFunctionsSectionsEquiv X U).injective (by
+      simp [rationalFunctionsSectionsEquiv_smul, mul_left_comm]))
+
+@[simp]
+theorem rationalFunctionsSectionsEquiv_mulBilin (U : X.Opens)
+    (s t : Γ(rationalFunctions X, U)) :
+    rationalFunctionsSectionsEquiv X U (rationalFunctionsMulBilin X U s t) =
+      rationalFunctionsSectionsEquiv X U s * rationalFunctionsSectionsEquiv X U t := by
+  simp [rationalFunctionsMulBilin]
+
+@[simp]
+theorem rationalFunctionsEquiv_mulBilin (U : X.Opens) [Nonempty U]
+    (s t : Γ(rationalFunctions X, U)) :
+    rationalFunctionsEquiv U (rationalFunctionsMulBilin X U s t) =
+      rationalFunctionsEquiv U s * rationalFunctionsEquiv U t := by
+  rw [rationalFunctionsEquiv_apply, rationalFunctionsSectionsEquiv_mulBilin, map_mul,
+    rationalFunctionsEquiv_apply, rationalFunctionsEquiv_apply]
+
+@[simp]
+theorem rationalFunctionsMulBilin_toRationalFunctions_app (U : X.Opens) (r : Γ(X, U))
+    (s : Γ(rationalFunctions X, U)) :
+    rationalFunctionsMulBilin X U
+        (Scheme.Modules.Hom.app (toRationalFunctions X) U r) s = r • s := by
+  apply (rationalFunctionsSectionsEquiv X U).injective
+  rw [rationalFunctionsSectionsEquiv_mulBilin, toRationalFunctionsRing_app,
+    rationalFunctionsSectionsEquiv_smul]
+
+@[simp]
+theorem rationalFunctionsMulBilin_map {U V : X.Opens} (i : V ⟶ U)
+    (s t : Γ(rationalFunctions X, U)) :
+    (rationalFunctions X).presheaf.map i.op (rationalFunctionsMulBilin X U s t) =
+      rationalFunctionsMulBilin X V ((rationalFunctions X).presheaf.map i.op s)
+        ((rationalFunctions X).presheaf.map i.op t) := by
+  apply (rationalFunctionsSectionsEquiv X V).injective
+  rw [rationalFunctionsSectionsEquiv_map, rationalFunctionsSectionsEquiv_mulBilin,
+    rationalFunctionsSectionsEquiv_mulBilin, rationalFunctionsSectionsEquiv_map,
+    rationalFunctionsSectionsEquiv_map, map_mul]
+
+end SectionsMul
+
+section Mul
+
+variable (X)
+
+def rationalFunctionsMul (f : X.functionField) :
+    rationalFunctions X ⟶ rationalFunctions X := by
+  let _ : Nonempty ((⊤ : X.Opens) : Type u) := instNonemptyTop
+  exact (Scheme.Modules.pushforward (fromSpecFunctionField X)).map
+    (Scheme.Modules.globalSectionsSmul (SheafOfModules.unit _)
+      ((rationalFunctionsRingEquiv (X := X) ⊤).symm f))
+
+variable {X}
+
+@[simp]
+theorem rationalFunctionsEquiv_rationalFunctionsMul_app (f : X.functionField) (U : X.Opens)
+    [Nonempty U] (s : Γ(rationalFunctions X, U)) :
+    rationalFunctionsEquiv U (Scheme.Modules.Hom.app (rationalFunctionsMul X f) U s) =
+      f * rationalFunctionsEquiv U s := by
+  let _ : Nonempty ((⊤ : X.Opens) : Type u) := instNonemptyTop
+  have hval : rationalFunctionsSectionsEquiv X U
+      (Scheme.Modules.Hom.app (rationalFunctionsMul X f) U s) =
+      (rationalFunctionsRing X).presheaf.map (homOfLE le_top).op
+          (rationalFunctionsSectionsEquiv X ⊤ ((rationalFunctionsRingEquiv (X := X) ⊤).symm f)) *
+        rationalFunctionsSectionsEquiv X U s :=
+    congrArg (rationalFunctionsSectionsEquiv X U)
+      (ConcreteCategory.congr_hom (Scheme.Modules.globalSectionsSmul_app
+        (SheafOfModules.unit (Spec X.functionField).ringCatSheaf)
+        ((rationalFunctionsRingEquiv (X := X) ⊤).symm f) (fromSpecFunctionField X ⁻¹ᵁ U)) s)
+  rw [rationalFunctionsEquiv_apply, hval, map_mul, rationalFunctionsRingEquiv_map,
+    ← rationalFunctionsEquiv_apply]
+  congr 1
+  exact (rationalFunctionsRingEquiv (X := X) ⊤).apply_symm_apply f
+
+@[simp]
+theorem rationalFunctionsMul_mul (f g : X.functionField) :
+    rationalFunctionsMul X (f * g) = rationalFunctionsMul X g ≫ rationalFunctionsMul X f := by
+  let _ : Nonempty ((⊤ : X.Opens) : Type u) := instNonemptyTop
+  simp only [rationalFunctionsMul, map_mul]
+  let M : (Spec X.functionField).Modules :=
+    SheafOfModules.unit (Spec X.functionField).ringCatSheaf
+  let F := Scheme.Modules.pushforward (fromSpecFunctionField X)
+  let f' : Γ(Spec X.functionField, ⊤) := (rationalFunctionsRingEquiv (X := X) ⊤).symm f
+  let g' : Γ(Spec X.functionField, ⊤) := (rationalFunctionsRingEquiv (X := X) ⊤).symm g
+  change F.map (Scheme.Modules.globalSectionsSmul M (f' * g')) =
+    F.map (Scheme.Modules.globalSectionsSmul M g') ≫
+      F.map (Scheme.Modules.globalSectionsSmul M f')
+  rw [Scheme.Modules.globalSectionsSmul_mul, Functor.map_comp]
+
+@[simp]
+theorem rationalFunctionsMul_one : rationalFunctionsMul X 1 = 𝟙 _ := by
+  let _ : Nonempty ((⊤ : X.Opens) : Type u) := instNonemptyTop
+  simp only [rationalFunctionsMul, map_one]
+  let M : (Spec X.functionField).Modules :=
+    SheafOfModules.unit (Spec X.functionField).ringCatSheaf
+  let F := Scheme.Modules.pushforward (fromSpecFunctionField X)
+  change F.map (Scheme.Modules.globalSectionsSmul M 1) = 𝟙 _
+  rw [Scheme.Modules.globalSectionsSmul_one]
+  exact F.map_id M
+
+@[simp]
+theorem rationalFunctionsMul_inv_comp (g : X.functionFieldˣ) :
+    rationalFunctionsMul X ((g⁻¹ : X.functionFieldˣ) : X.functionField) ≫
+        rationalFunctionsMul X (g : X.functionField) = 𝟙 _ := by
+  rw [← rationalFunctionsMul_mul, g.mul_inv, rationalFunctionsMul_one]
+
+@[simp]
+lemma rationalFunctionsMul_app_rationalFunctionsMul_inv_app (g : X.functionFieldˣ)
+    (U : X.Opens) (s : Γ(rationalFunctions X, U)) :
+    Scheme.Modules.Hom.app (rationalFunctionsMul X (g : X.functionField)) U
+        (Scheme.Modules.Hom.app (rationalFunctionsMul X
+          ((g⁻¹ : X.functionFieldˣ) : X.functionField)) U s) = s := by
+  simpa only [Scheme.Modules.Hom.comp_app, ConcreteCategory.comp_apply,
+    Scheme.Modules.Hom.id_app, ConcreteCategory.id_apply] using
+    ConcreteCategory.congr_hom
+      (congrArg (fun φ ↦ Scheme.Modules.Hom.app φ U) (rationalFunctionsMul_inv_comp g)) s
+
+end Mul
+
+variable [IsIntegral X]
+
+theorem toRationalFunctions_app_injective (U : X.Opens) :
+    Function.Injective (Scheme.Modules.Hom.app (toRationalFunctions X) U) := by
+  rcases U.1.eq_empty_or_nonempty with h | h
+  · have hU : U = ⊥ := SetLike.ext' h
+    have hsub : Subsingleton Γ(X, U) :=
+      CommRingCat.subsingleton_of_isTerminal (X.sheaf.isTerminalOfEqEmpty hU)
+    exact fun a b _ => Subsingleton.elim (id a : Γ(X, U)) (id b : Γ(X, U))
+  · have : Nonempty U := by simpa using h
+    intro a b hab
+    have key : X.germToFunctionField U (id a : Γ(X, U)) =
+        X.germToFunctionField U (id b : Γ(X, U)) := by
+      rw [← rationalFunctionsEquiv_toRationalFunctions_app,
+        ← rationalFunctionsEquiv_toRationalFunctions_app]
+      exact congrArg _ hab
+    exact X.germToFunctionField_injective U key
+
+theorem exists_germToFunctionField_eq_of_forall_mem_range {U : X.Opens} [Nonempty U]
+    {f : X.functionField}
+    (hf : ∀ y ∈ U, f ∈ (algebraMap (X.presheaf.stalk y) X.functionField).range) :
+    ∃ a : Γ(X, U), X.germToFunctionField U a = f := by
+  have hgen : ∀ V : X.Opens, Nonempty V → genericPoint X ∈ V := fun V _ ↦ genericPoint_mem V
+  have key : ∀ y : U, ∃ V : X.Opens, ∃ _ : (y : X) ∈ V, ∃ hV : V ≤ U,
+      ∃ s : Γ(X, V), X.presheaf.germ V (genericPoint X) (hgen V ⟨⟨(y : X), ‹_›⟩⟩) s = f := by
+    intro y
+    obtain ⟨g, hgf⟩ := hf y y.2
+    obtain ⟨W, hyW, s, hs⟩ := X.presheaf.exists_germ_eq g
+    have hmem : (y : X) ∈ (W ⊓ U : X.Opens) := ⟨hyW, y.2⟩
+    have hWU : Nonempty (W ⊓ U : X.Opens) := ⟨⟨(y : X), hmem⟩⟩
+    have : Nonempty W := ⟨⟨(y : X), hyW⟩⟩
+    refine ⟨W ⊓ U, hmem, inf_le_right, X.presheaf.map (homOfLE inf_le_left).op s, ?_⟩
+    rw [X.presheaf.germ_res_apply (homOfLE (inf_le_left : W ⊓ U ≤ W)) (genericPoint X)
+      (hgen _ hWU) s, ← hgf, ← hs]
+    exact (_root_.AlgebraicGeometry.Scheme.algebraMap_germ_eq_germToFunctionField X hyW s).symm
+  choose V hyV hVU s hs using key
+  have hne : ∀ y : U, Nonempty (V y) := fun y ↦ ⟨⟨(y : X), hyV y⟩⟩
+  have hcompat : TopCat.Presheaf.IsCompatible X.presheaf V s := by
+    intro y z
+    have hyz : Nonempty (V y ⊓ V z : X.Opens) :=
+      ⟨⟨genericPoint X, hgen _ (hne y), hgen _ (hne z)⟩⟩
+    refine X.germToFunctionField_injective (V y ⊓ V z) ?_
+    rw [X.presheaf.germ_res_apply (Opens.infLELeft (V y) (V z)) (genericPoint X)
+        (hgen _ hyz) (s y),
+      X.presheaf.germ_res_apply (Opens.infLERight (V y) (V z)) (genericPoint X)
+        (hgen _ hyz) (s z)]
+    exact (hs y).trans (hs z).symm
+  obtain ⟨a, ha, -⟩ := X.sheaf.existsUnique_gluing' V U (fun y ↦ homOfLE (hVU y))
+    (fun y hy ↦ Opens.mem_iSup.mpr ⟨⟨y, hy⟩, hyV ⟨y, hy⟩⟩) s hcompat
+  obtain ⟨y⟩ := ‹Nonempty U›
+  refine ⟨a, ?_⟩
+  have hres : X.presheaf.map (homOfLE (hVU y)).op a = s y := ha y
+  rw [← hs y, ← hres,
+    X.presheaf.germ_res_apply (homOfLE (hVU y)) (genericPoint X) (hgen _ (hne y)) a]
+
+theorem toRationalFunctionsRing_app_injective (U : X.Opens) :
+    Function.Injective ((toRationalFunctionsRing X).hom.app (.op U)) := by
+  intro r s hrs
+  apply toRationalFunctions_app_injective U
+  apply (rationalFunctionsSectionsEquiv X U).injective
+  exact (toRationalFunctionsRing_app U r).trans
+    (hrs.trans (toRationalFunctionsRing_app U s).symm)
+
+instance : Mono (toRationalFunctionsRing X).hom := by
+  have hU : ∀ U : (Opens X)ᵒᵖ, Mono ((toRationalFunctionsRing X).hom.app U) := fun U =>
+    ConcreteCategory.mono_of_injective _ (toRationalFunctionsRing_app_injective U.unop)
+  exact NatTrans.mono_of_mono_app _
+
+instance : Mono (toRationalFunctions X) := by
+  have hU : ∀ U : (Opens X)ᵒᵖ,
+      Mono (((Scheme.Modules.toPresheaf X).map (toRationalFunctions X)).app U) := fun U =>
+    ConcreteCategory.mono_of_injective _ (toRationalFunctions_app_injective U.unop)
+  exact (Scheme.Modules.toPresheaf X).mono_of_mono_map (NatTrans.mono_of_mono_app _)
+
+end Scheme
+
+end
+
+end AlgebraicGeometry
+
+end TauCeti

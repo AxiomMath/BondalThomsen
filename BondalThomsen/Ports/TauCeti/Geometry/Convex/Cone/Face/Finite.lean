@@ -1,0 +1,67 @@
+module
+
+public import Mathlib.Geometry.Convex.Cone.Face.Lattice
+public import Mathlib.RingTheory.Finiteness.Basic
+
+@[expose] public section
+
+namespace PointedCone
+
+variable {R M : Type*} [Semiring R] [PartialOrder R] [IsOrderedRing R]
+  [AddCommGroup M] [Module R M]
+
+namespace Face
+
+variable {C : PointedCone R M}
+
+theorem eq_hull_inter_of_eq_hull (F : C.Face) (s : Set M) (hC : C = PointedCone.hull R s) :
+    F.toPointedCone = PointedCone.hull R (s ∩ (F : Set M)) := by
+  classical
+  subst C
+  apply le_antisymm
+  · intro x hx
+    obtain ⟨c, hcs, hc0, hcx⟩ := PointedCone.mem_hull_set.1 (F.isFaceOf.le hx)
+    rw [Finsupp.sum] at hcx
+    have hmem : ∀ y ∈ c.support, y ∈ PointedCone.hull R s := fun y hy ↦
+      PointedCone.subset_hull (hcs hy)
+    have hsum : ∑ j : c.support, c (j : M) • (j : M) ∈ F := by
+      rw [Finset.univ_eq_attach, Finset.sum_attach c.support fun y ↦ c y • y, hcx]
+      exact hx
+    have hface : ∀ y ∈ c.support, y ∈ F := fun y hy ↦
+      F.isFaceOf.mem_of_sum_smul_mem (f := fun j : c.support ↦ (j : M))
+        (c := fun j ↦ c (j : M)) (fun j ↦ hmem j j.2) (fun j ↦ hc0 _) hsum ⟨y, hy⟩
+        (lt_of_le_of_ne (hc0 y) (Ne.symm (Finsupp.mem_support_iff.1 hy)))
+    rw [← hcx]
+    refine Submodule.sum_mem _ fun y hy ↦ PointedCone.smul_mem _ (hc0 y) ?_
+    exact PointedCone.subset_hull ⟨hcs hy, hface y hy⟩
+  · refine Submodule.span_le.2 ?_
+    intro x hx
+    exact hx.2
+
+end Face
+
+namespace FG
+
+variable {C : PointedCone R M}
+
+theorem finite_face (hC : C.FG) : Finite C.Face := by
+  classical
+  obtain ⟨s, hs⟩ := hC
+  let records : C.Face → Set s := fun F ↦ {x | (x : M) ∈ F}
+  apply Finite.of_injective records
+  intro F G hFG
+  have hinter : ((s : Set M) ∩ (F : Set M)) = (s : Set M) ∩ (G : Set M) := by
+    ext y
+    simp only [Set.mem_inter_iff, Finset.mem_coe]
+    exact and_congr_right fun hy ↦ by
+      simpa [records] using Set.ext_iff.mp hFG ⟨y, hy⟩
+  have hcones : F.toPointedCone = G.toPointedCone :=
+    (F.eq_hull_inter_of_eq_hull (s : Set M) hs.symm).trans <|
+      (congrArg (PointedCone.hull R) hinter).trans
+        (G.eq_hull_inter_of_eq_hull (s : Set M) hs.symm).symm
+  exact Face.ext fun x ↦ Set.ext_iff.mp
+    (congrArg (fun K : PointedCone R M ↦ (K : Set M)) hcones) x
+
+end FG
+
+end PointedCone

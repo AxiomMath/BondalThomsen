@@ -1,0 +1,154 @@
+module
+
+public import Mathlib.Algebra.Category.ModuleCat.Presheaf.Generator
+public import Mathlib.Algebra.Category.ModuleCat.Presheaf.Monoidal
+public import Mathlib.CategoryTheory.Localization.Monoidal.Basic
+public import Mathlib.CategoryTheory.MorphismProperty.Limits
+public import Mathlib.CategoryTheory.Sites.LocallyBijective
+public import Mathlib.CategoryTheory.Sites.Localization
+public import Mathlib.LinearAlgebra.DirectSum.Finsupp
+
+import BondalThomsen.Ports.TauCeti.LinearAlgebra.DirectSum.Finsupp
+@[expose] public section
+
+open CategoryTheory Limits MonoidalCategory Opposite TensorProduct
+
+namespace TauCeti
+
+universe v u
+
+section Locality
+
+variable {C : Type u} [Category.{v} C] (J : GrothendieckTopology C)
+  {R : Cᵒᵖ ⥤ CommRingCat.{u}}
+
+theorem _root_.PresheafOfModules.isLocallySurjective_whiskerLeft
+    (P : PresheafOfModulesOfCommRing.{u} R) {N N' : PresheafOfModulesOfCommRing.{u} R}
+    (f : N ⟶ N') [Presheaf.IsLocallySurjective J ((PresheafOfModules.toPresheaf _).map f)] :
+    Presheaf.IsLocallySurjective J ((PresheafOfModules.toPresheaf _).map (P ◁ f)) where
+  imageSieve_mem {U} t := by
+    change (P.obj (op U) ⊗ N'.obj (op U) : ModuleCat _) at t
+    induction t using TensorProduct.inductionOn with
+    | tmul p n' =>
+      refine J.superset_covering ?_
+        (Presheaf.imageSieve_mem J ((PresheafOfModules.toPresheaf _).map f) n')
+      rintro V g ⟨n, hn⟩
+      refine ⟨P.map g.op p ⊗ₜ n, ?_⟩
+      change P.map g.op p ⊗ₜ f.app (op V) n = (P ⊗ N').map g.op (p ⊗ₜ n')
+      change f.app (op V) n = N'.map g.op n' at hn
+      rw [hn]
+      rfl
+    | add a b ha hb =>
+      refine J.superset_covering ?_ (J.intersection_covering ha hb)
+      rintro V g ⟨⟨a', ha'⟩, ⟨b', hb'⟩⟩
+      exact ⟨a' + b', (map_add _ a' b').trans
+        ((congrArg₂ (· + ·) ha' hb').trans (map_add _ a b).symm)⟩
+
+theorem _root_.PresheafOfModules.isLocallyInjective_free_whiskerLeft (F : Cᵒᵖ ⥤ Type u)
+    {N N' : PresheafOfModulesOfCommRing.{u} R} (f : N ⟶ N')
+    [Presheaf.IsLocallyInjective J ((PresheafOfModules.toPresheaf _).map f)] :
+    Presheaf.IsLocallyInjective J
+      ((PresheafOfModules.toPresheaf _).map ((PresheafOfModules.free _).obj F ◁ f)) where
+  equalizerSieve_mem {U} x y hxy := by
+    classical
+    let e := finsuppScalarLeft (R.obj U) (N.obj U) (F.obj U)
+    let t : (F.obj U →₀ R.obj U) ⊗[R.obj U] N.obj U := x - y
+    have ht : (f.app U).hom.lTensor _ t = 0 := (map_sub _ x y).trans (sub_eq_zero.2 hxy)
+    have hz : ∀ z ∈ (e t).support, Presheaf.equalizerSieve
+        (F := (PresheafOfModules.toPresheaf _).obj N) (e t z) 0 ∈ J U.unop := fun z _ ↦
+      Presheaf.equalizerSieve_mem J ((PresheafOfModules.toPresheaf _).map f) _ _ <| by
+        have := congrArg (fun s ↦ finsuppScalarLeft (R.obj U) (N'.obj U) (F.obj U) s z) ht
+        simp only [finsuppScalarLeft_lTensor_apply, map_zero, Finsupp.coe_zero,
+          Pi.zero_apply] at this
+        exact this.trans (map_zero _).symm
+    refine J.superset_covering ?_ (Finset.inf_induction (J.top_mem _)
+      (fun _ h₁ _ h₂ ↦ J.intersection_covering h₁ h₂) hz)
+    intro V g hg
+    have hg' : ∀ z ∈ (e t).support, N.map g.op (e t z) = 0 := fun z hz ↦
+      (Finset.inf_le (f := fun z ↦ Presheaf.equalizerSieve
+        (F := (PresheafOfModules.toPresheaf _).obj N) (e t z) 0) hz g hg).trans (map_zero _)
+    have key : ((PresheafOfModules.free _).obj F ⊗ N).map g.op t = 0 := by
+      refine (congrArg _ (sum_single_tmul_finsuppScalarLeft t).symm).trans
+        ((map_sum _ _ _).trans (Finset.sum_eq_zero fun z hz ↦ ?_))
+      change _ ⊗ₜ N.map g.op (e t z) = 0
+      exact (congrArg _ (hg' z hz)).trans (tmul_zero _ _)
+    exact sub_eq_zero.1 ((map_sub _ x y).symm.trans key)
+
+end Locality
+
+variable {C : Type u} [SmallCategory C] (J : GrothendieckTopology C) {R : Cᵒᵖ ⥤ CommRingCat.{u}}
+
+variable [HasWeakSheafify J AddCommGrpCat.{u}]
+
+lemma isStableUnderColimitsOfShape_inverseImage_W_toPresheaf (K : Type*) [Category K]
+    [PreservesColimitsOfShape K (PresheafOfModules.toPresheaf.{u} (R ⋙ forget₂ _ _))]
+    [PreservesColimitsOfShape K (presheafToSheaf J AddCommGrpCat.{u})] :
+    MorphismProperty.IsStableUnderColimitsOfShape ((J.W (A := AddCommGrpCat.{u})).inverseImage
+      (PresheafOfModules.toPresheaf (R ⋙ forget₂ _ _))) K where
+  condition X₁ X₂ c₁ c₂ h₁ h₂ f hf φ hφ := by
+    let G := PresheafOfModules.toPresheaf (R ⋙ forget₂ _ _) ⋙
+      presheafToSheaf J AddCommGrpCat.{u}
+    have : PreservesColimitsOfShape K G := comp_preservesColimitsOfShape _ _
+    have hW : ∀ {M M' : PresheafOfModules.{u} (R ⋙ forget₂ _ _)} (g : M ⟶ M'),
+        (J.W (A := AddCommGrpCat.{u})).inverseImage
+          (PresheafOfModules.toPresheaf (R ⋙ forget₂ _ _)) g ↔ IsIso (G.map g) := fun g ↦ by
+      rw [MorphismProperty.inverseImage_iff, J.W_eq_inverseImage_isomorphisms]
+      rfl
+    rw [hW]
+    exact MorphismProperty.IsStableUnderColimitsOfShape.condition (W := .isomorphisms _)
+      (X₁ ⋙ G) (X₂ ⋙ G) (G.mapCocone c₁) (G.mapCocone c₂) (isColimitOfPreserves G h₁)
+      (isColimitOfPreserves G h₂) (Functor.whiskerRight f G) (fun k ↦ (hW _).1 (hf k))
+      (G.map φ) (fun k ↦ by simp [G, ← Functor.map_comp, hφ])
+
+lemma inverseImage_W_toPresheaf_whiskerLeft_of_isColimit {K : Type*} [Category K]
+    [PreservesColimitsOfShape K (PresheafOfModules.toPresheaf.{u} (R ⋙ forget₂ _ _))]
+    [∀ N : PresheafOfModules.{u} (R ⋙ forget₂ _ _), PreservesColimitsOfShape K (tensorRight N)]
+    {D : K ⥤ PresheafOfModules.{u} (R ⋙ forget₂ _ _)} {c : Cocone D} (hc : IsColimit c)
+    {N N' : PresheafOfModules.{u} (R ⋙ forget₂ _ _)} (f : N ⟶ N')
+    (hD : ∀ k, (J.W (A := AddCommGrpCat.{u})).inverseImage
+      (PresheafOfModules.toPresheaf _) (D.obj k ◁ f)) :
+    (J.W (A := AddCommGrpCat.{u})).inverseImage (PresheafOfModules.toPresheaf _) (c.pt ◁ f) :=
+  (isStableUnderColimitsOfShape_inverseImage_W_toPresheaf J K).condition
+    (D ⋙ tensorRight N) (D ⋙ tensorRight N')
+    ((tensorRight N).mapCocone c) ((tensorRight N').mapCocone c) (isColimitOfPreserves _ hc)
+    (isColimitOfPreserves _ hc) (Functor.whiskerLeft D ((tensoringRight _).map f)) hD
+    (c.pt ◁ f) (fun _ ↦ (whisker_exchange _ _).symm)
+
+variable [J.WEqualsLocallyBijective AddCommGrpCat.{u}]
+
+theorem _root_.PresheafOfModules.inverseImage_W_toPresheaf_whiskerLeft
+    (P : PresheafOfModules.{u} (R ⋙ forget₂ _ _)) {N N' : PresheafOfModules.{u} (R ⋙ forget₂ _ _)}
+    {f : N ⟶ N'}
+    (hf : (J.W (A := AddCommGrpCat.{u})).inverseImage (PresheafOfModules.toPresheaf _) f) :
+    (J.W (A := AddCommGrpCat.{u})).inverseImage (PresheafOfModules.toPresheaf _) (P ◁ f) := by
+  rw [MorphismProperty.inverseImage_iff, J.W_iff_isLocallyBijective] at hf
+  obtain ⟨_, _⟩ := hf
+  have hfree (F : Cᵒᵖ ⥤ Type u) : (J.W (A := AddCommGrpCat.{u})).inverseImage
+      (PresheafOfModules.toPresheaf _) ((PresheafOfModules.free _).obj F ◁ f) := by
+    have := PresheafOfModules.isLocallySurjective_whiskerLeft J
+      ((PresheafOfModules.free _).obj F) f
+    have := PresheafOfModules.isLocallyInjective_free_whiskerLeft J F f
+    exact J.W_of_isLocallyBijective _
+  have hcoprod (M : PresheafOfModules.{u} (R ⋙ forget₂ _ _)) :
+      (J.W (A := AddCommGrpCat.{u})).inverseImage (PresheafOfModules.toPresheaf _)
+        (M.freeYonedaCoproduct ◁ f) :=
+    inverseImage_W_toPresheaf_whiskerLeft_of_isColimit J (colimit.isColimit _) f
+      fun _ ↦ hfree _
+  exact inverseImage_W_toPresheaf_whiskerLeft_of_isColimit J
+    P.isColimitFreeYonedaCoproductsCokernelCofork f (by rintro (_ | _) <;> exact hcoprod _)
+
+theorem _root_.PresheafOfModules.inverseImage_W_toPresheaf_whiskerRight
+    {N N' : PresheafOfModules.{u} (R ⋙ forget₂ _ _)} {f : N ⟶ N'}
+    (hf : (J.W (A := AddCommGrpCat.{u})).inverseImage (PresheafOfModules.toPresheaf _) f)
+    (P : PresheafOfModules.{u} (R ⋙ forget₂ _ _)) :
+    (J.W (A := AddCommGrpCat.{u})).inverseImage (PresheafOfModules.toPresheaf _) (f ▷ P) :=
+  (MorphismProperty.arrow_mk_iso_iff _ (Arrow.isoMk (β_ N P) (β_ N' P))).2
+    (PresheafOfModules.inverseImage_W_toPresheaf_whiskerLeft J P hf)
+
+instance _root_.PresheafOfModules.isMonoidal_inverseImage_W_toPresheaf :
+    MorphismProperty.IsMonoidal ((J.W (A := AddCommGrpCat.{u})).inverseImage
+      (PresheafOfModules.toPresheaf.{u} (R ⋙ forget₂ _ _))) where
+  whiskerLeft P _ _ _ hg := PresheafOfModules.inverseImage_W_toPresheaf_whiskerLeft J P hg
+  whiskerRight _ hf P := PresheafOfModules.inverseImage_W_toPresheaf_whiskerRight J hf P
+
+end TauCeti
